@@ -1,12 +1,12 @@
 # DataDoctor AI
 
-A web-based data-quality and CRM platform for uploading, auditing, cleaning, exploring, and visualizing datasets.
+AI-powered data cleaning and quality analysis platform that automatically detects data quality issues, generates insights, and provides cleaning recommendations using a modern React and FastAPI architecture with MongoDB Atlas.
 
 ## Tech Stack
 
 - **Frontend**: React 18, Vite, Tailwind CSS, React Router, Recharts
-- **Backend**: Python 3.11+, FastAPI, SQLAlchemy, Pandas
-- **Database**: PostgreSQL 15+
+- **Backend**: Python 3.11+, FastAPI, MongoDB (Motor), Pandas
+- **Database**: MongoDB Atlas
 - **DevOps**: Docker, Docker Compose
 
 ## Quick Start
@@ -14,7 +14,7 @@ A web-based data-quality and CRM platform for uploading, auditing, cleaning, exp
 ### Prerequisites
 - Node.js 18+
 - Python 3.11+
-- PostgreSQL 15+
+- MongoDB Account or Local MongoDB
 
 ### Frontend Setup
 ```bash
@@ -33,14 +33,7 @@ uvicorn app.main:app --reload
 ```
 
 ### Database Setup
-```bash
-# Create database
-createdb datadoctor
-
-# Run migrations
-cd backend
-alembic upgrade head
-```
+Ensure you have a MongoDB cluster URL ready and configured in the backend `.env` file.
 
 ### Docker Setup
 ```bash
@@ -104,7 +97,8 @@ Once the backend is running, visit:
 
 ### Backend (.env)
 ```
-DATABASE_URL=postgresql://user:password@localhost:5432/datadoctor
+MONGODB_URL=mongodb+srv://<user>:<password>@cluster.mongodb.net/datadoctor?retryWrites=true&w=majority
+MONGODB_DB_NAME=datadoctor
 SECRET_KEY=your-secret-key-min-32-chars
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=1440
