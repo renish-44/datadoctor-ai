@@ -166,14 +166,15 @@ export default function LoginForm({
 
           {/* Forgot password */}
           <div className="mt-2 text-right">
-            <button
-              type="button"
+            <Link
+              to="/forgot-password"
               className="text-[11px] font-semibold text-primary hover:text-primary-dark transition-colors duration-150 focus-visible:outline-none focus-visible:underline"
             >
               Forgot password?
-            </button>
+            </Link>
           </div>
         </div>
+
 
         {/* ── Submit button ───────────────────────────────────────── */}
         <button
