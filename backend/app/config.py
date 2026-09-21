@@ -21,6 +21,18 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "./uploads"
     MAX_FILE_SIZE_MB: int = 500
 
+    # SMTP / Email
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+    SMTP_FROM_NAME: str = "DataDoctor AI"
+    SMTP_USE_TLS: bool = True
+
+    # Frontend URL (for building reset links in emails)
+    FRONTEND_URL: str = "http://localhost:5173"
+
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",
         "http://localhost:5173",

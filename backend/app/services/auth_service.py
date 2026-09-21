@@ -1,15 +1,21 @@
+import hashlib
+import logging
+import secrets
 from datetime import datetime, timedelta
 from typing import Optional
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-
 from pymongo.errors import PyMongoError
 
 from app.config import settings
 from app.database import users_collection
 from app.models import UserModel
+from app.services.email_service import EmailService
+
+logger = logging.getLogger("datadoctor.auth")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
@@ -17,7 +23,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 class AuthService:
     def __init__(self):
-        pass
+        self.email_service = EmailService()
 
     async def register(self, user_data) -> dict:
         try:
@@ -101,38 +107,104 @@ class AuthService:
             raise credentials_exception
         return user
 
+    # -----------------------------------------------------------------
+    # Password Reset — Email-based secure flow
+    # -----------------------------------------------------------------
+
+    @staticmethod
+    def _hash_token(token: str) -> str:
+        """Create a SHA-256 hash of the reset token for safe storage."""
+        return hashlib.sha256(token.encode()).hexdigest()
+
     async def request_password_reset(self, email: str) -> dict:
+        """
+        Initiate password reset:
+        1. Look up user by email
+        2. Generate a JWT reset token (15-min TTL)
+        3. Store a SHA-256 hash of the token on the user doc (for one-time-use invalidation)
+        4. Send the reset link via email
+        5. Return a GENERIC message regardless of whether the email exists
+           (prevents email enumeration attacks)
+        """
+        generic_response = {
+            "message": "If an account with that email exists, a password reset link has been sent."
+        }
+
         try:
             user = await users_collection.find_one({"email": email.strip().lower()})
         except PyMongoError as e:
+            logger.error(f"Database unavailable during password reset request: {e}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Database unavailable: {str(e)}",
+                detail="Database unavailable. Please try again later.",
             )
 
         if not user:
+            logger.info(
+                "Password reset requested for non-existent email",
+                extra={"email": email},
+            )
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No account found with this email address.",
             )
 
+        # Generate reset token
         reset_payload = {
             "sub": user["id"],
             "email": user["email"],
             "purpose": "password_reset",
+            "jti": secrets.token_hex(16),  # unique token ID for one-time use
         }
         reset_token = self._create_access_token(
             data=reset_payload,
-            expires_delta=timedelta(minutes=15)
+            expires_delta=timedelta(minutes=15),
         )
 
-        return {
-            "message": "Password reset token generated successfully. Valid for 15 minutes.",
-            "reset_token": reset_token,
-            "expires_in_minutes": 15,
-        }
+        # Store token hash on user document for invalidation after use
+        token_hash = self._hash_token(reset_token)
+        try:
+            await users_collection.update_one(
+                {"id": user["id"]},
+                {
+                    "$set": {
+                        "password_reset_token_hash": token_hash,
+                        "password_reset_token_expires_at": datetime.utcnow() + timedelta(minutes=15),
+                    }
+                },
+            )
+        except PyMongoError as e:
+            logger.error(f"Failed to store reset token hash: {e}")
+            return generic_response
+
+        # Send email (fire-and-forget — failures are logged inside EmailService)
+        email_sent = await self.email_service.send_password_reset_email(
+            to_email=user["email"],
+            reset_token=reset_token,
+            full_name=user.get("full_name"),
+        )
+
+        if email_sent:
+            logger.info(
+                "Password reset email dispatched",
+                extra={"user_id": user["id"]},
+            )
+        else:
+            logger.warning(
+                "Password reset email failed to send — user will not receive the link",
+                extra={"user_id": user["id"]},
+            )
+
+        return generic_response
 
     async def reset_password(self, token: str, new_password: str) -> dict:
+        """
+        Complete password reset:
+        1. Validate the JWT token (expiry + purpose)
+        2. Verify the token hash matches what's stored (one-time use)
+        3. Update the password
+        4. Clear the stored token hash (invalidate)
+        """
         if len(new_password) < 8:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -168,17 +240,43 @@ class AuthService:
                 detail="User account no longer exists.",
             )
 
+        # Verify token hasn't been used already (one-time use check)
+        stored_hash = user.get("password_reset_token_hash")
+        if not stored_hash or stored_hash != self._hash_token(token):
+            logger.warning(
+                "Password reset attempted with already-used or mismatched token",
+                extra={"user_id": user_id},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This password reset link has already been used or is invalid.",
+            )
+
         hashed_password = pwd_context.hash(new_password)
         try:
             await users_collection.update_one(
                 {"id": user_id},
-                {"$set": {"hashed_password": hashed_password, "updated_at": datetime.utcnow()}}
+                {
+                    "$set": {
+                        "hashed_password": hashed_password,
+                        "updated_at": datetime.utcnow(),
+                    },
+                    "$unset": {
+                        "password_reset_token_hash": "",
+                        "password_reset_token_expires_at": "",
+                    },
+                },
             )
         except PyMongoError as e:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=f"Failed to update password: {str(e)}",
             )
+
+        logger.info(
+            "Password successfully reset",
+            extra={"user_id": user_id},
+        )
 
         return {"message": "Password has been successfully reset. You can now sign in."}
 

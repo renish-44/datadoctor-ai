@@ -12,3 +12,5 @@ numpy
 openpyxl
 aiofiles
 httpx
+aiosmtplib
+certifi

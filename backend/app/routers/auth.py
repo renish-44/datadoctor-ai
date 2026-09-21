@@ -33,7 +33,6 @@ async def get_current_user(current_user=Depends(AuthService.get_current_user)):
 
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
 async def forgot_password(request: ForgotPasswordRequest):
-     
     return await auth_service.request_password_reset(request.email)
 
 

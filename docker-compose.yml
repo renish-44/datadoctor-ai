@@ -1,0 +1,44 @@
+# ──────────────────────────────────────────────────────────────
+# DataDoctor AI — Docker Compose
+# ──────────────────────────────────────────────────────────────
+# Usage:
+#   docker compose up --build        (first run / after code changes)
+#   docker compose up -d             (background)
+#   docker compose down              (stop)
+#   docker compose logs -f backend   (tail backend logs)
+# ──────────────────────────────────────────────────────────────
+
+services:
+  # ── Backend (FastAPI + Uvicorn) ────────────────────────────
+  backend:
+    build: ./backend
+    container_name: datadoctor-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    volumes:
+      - backend-uploads:/app/uploads
+      - backend-logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ── Frontend (Vite build → Nginx) ─────────────────────────
+  frontend:
+    build: ./frontend
+    container_name: datadoctor-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  backend-uploads:
+  backend-logs:

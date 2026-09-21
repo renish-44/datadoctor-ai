@@ -6,6 +6,7 @@ from pymongo.errors import PyMongoError
 
 from app.config import settings
 from app.database import init_db, close_db, check_db_connection
+from app.middleware.logging_middleware import RequestLoggingMiddleware
 from app.routers import auth, datasets, audit, cleaning
 
 
@@ -46,6 +47,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Structured request logging — captures IP, method, path, latency, status, action, user_id
+app.add_middleware(RequestLoggingMiddleware)
 
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(datasets.router, prefix="/api/v1/datasets", tags=["Datasets"])
